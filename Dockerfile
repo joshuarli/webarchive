@@ -1,8 +1,8 @@
-FROM docker.io/debian:12.4-slim as builder
+FROM docker.io/debian:12.4-slim as webarchive-builder
 
 # git, ssh required to install @postlight/parser... and it still doesn't work lol
 RUN apt-get update -qq \
-    && apt-get install -qq -y --no-install-recommends xz-utils
+    && apt-get install -qq -y --no-install-recommends xz-utils unzip
 
 ENV PATH="/opt/node/bin:${PATH}"
 
@@ -15,20 +15,40 @@ RUN echo "822780369d0ea309e7d218e41debbd1a03f8cdf354ebf8a4420e89f39cc2e612  /tmp
     npm i -g npm
 
 # https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json
-# https://developer.chrome.com/blog/chrome-for-testing/#how_can_i_get_chrome_for_testing_binaries
-ENV CHROME_VERSION=120.0.6099.109 \
-    PATH="/opt/node/bin:${PATH}"
 
-WORKDIR /root
-RUN npx @puppeteer/browsers install "chrome@${CHROME_VERSION}" \
-    && npm install --save-exact single-file-cli
+# Extensions (which is needed for singlefile-cli) are not supported on old Chrome headless AKA chrome-headless-shell.
+# https://developer.chrome.com/blog/chrome-headless-shell
+# Also, despite not needing X, it's still linked to the same X stuff regular Chrome is.
+# And chrome-headless-shell seems to refuse to want to start without dbus system session.
+# ADD https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/121.0.6167.85/linux64/chrome-headless-shell-linux64.zip /tmp/chrome.zip
 
-# COPY "package-lock.json" .
-# && npm ci --prefer-offline --no-audit --cache /root/.npm \
+ADD https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/121.0.6167.85/linux64/chrome-linux64.zip /tmp/chrome.zip
+RUN unzip /tmp/chrome.zip -d /opt/chrome
 
-# FROM docker.io/python:3.12-alpine3.19
+# RUN npx @puppeteer/browsers install "chrome@$120.0.6099.109"
+# /chrome/linux-120.0.6099.109/chrome-linux64
 
-# node_modules should be all we need
-# COPY --from=builder
+# npm install --save-exact single-file-cli
+# podman run -it webarchive-builder cat /root/package-lock.json > package-lock.json
+WORKDIR /opt/webarchive
+COPY "package.json" "package-lock.json" .
+RUN npm ci --prefer-offline --no-audit
 
-# ENV PATH="/app/chrome/linux-${CHROME_VERSION}/chrome-linux64:/app/node_modules/.bin:$PATH"
+RUN rm -r /opt/node/lib/node_modules/npm
+
+FROM docker.io/python:3.12-slim-bookworm as webarchive
+
+COPY --from=webarchive-builder /opt/chrome/chrome-linux64 /opt/chrome
+COPY --from=webarchive-builder /opt/node /opt/node
+COPY --from=webarchive-builder /opt/webarchive /opt/webarchive
+
+ENV PATH="/opt/node/bin:/opt/chrome:${PATH}"
+
+RUN apt-get update -qq && \
+    apt-get install -qq -y --no-install-recommends libglib2.0-0 libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango1.0-0
+
+WORKDIR /opt/webarchive
+RUN useradd --system webarchive
+
+USER webarchive
+# RUN ./node_modules/single-file-cli/single-file --help
