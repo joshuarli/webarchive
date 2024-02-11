@@ -1,0 +1,5 @@
+.venv
+node_modules
+chrome
+__pycache__
+*.html
