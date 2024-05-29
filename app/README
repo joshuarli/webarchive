@@ -1,0 +1,9 @@
+some weird pages
+
+https://www.huckmag.com/article/kai-fusayoshi-reflects-on-a-life-shooting-the-streets-of-kyoto
+
+with singlefile, you need to artificially scroll down a bit to preserve the page
+otherwise it'll trip the next page mechanism
+
+--load-deferred-images-dispatch-scroll-event doesn't work for it
+we might have to tell the underlying chromedriver to scroll a little

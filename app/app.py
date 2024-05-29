@@ -98,6 +98,10 @@ def page(slug):
 @app.route("/", methods=("GET", "POST"))
 def home():
     if request.method == "GET":
+        # TODO: home.html should validate that it looks at least like a url
+        # TODO: we'll have to add a form to optionally enable
+        # singlefile --load-deferred-images-dispatch-scroll-event
+        # aaaand then we'll need to add more stuff like a delete button
         return render_template("home.html")
 
     url = request.form["url"]
