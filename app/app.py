@@ -1,3 +1,12 @@
+import shutil
+
+chrome = shutil.which("chrome")
+if chrome is None:
+    raise SystemExit("couldn't find chrome")
+
+singlefile = "/opt/webarchive/node_modules/single-file-cli/single-file"
+# singlefile = "/Users/josh/webarchive/node_modules/single-file-cli/single-file"
+
 import sys
 import hashlib
 import time
@@ -7,9 +16,6 @@ import json
 import urllib.parse
 import subprocess
 import multiprocessing
-
-chrome = "/Users/josh/webarchive/chrome/mac_arm-123.0.6291.0/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-singlefile = "/Users/josh/webarchive/node_modules/single-file-cli/single-file"
 
 chrome_args = json.dumps(
     [
