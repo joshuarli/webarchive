@@ -7,3 +7,8 @@ otherwise it'll trip the next page mechanism
 
 --load-deferred-images-dispatch-scroll-event doesn't work for it
 we might have to tell the underlying chromedriver to scroll a little
+
+
+local dev on macos
+
+WEBARCHIVE_SINGLEFILE=../node_modules/single-file-cli/single-file flask --app app run --port=5555

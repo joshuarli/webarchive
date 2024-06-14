@@ -1,13 +1,24 @@
+import os
 import shutil
+import platform
+
+macos = platform.system() == "Darwin"
 
 chrome = shutil.which("chrome")
+
+if macos:
+    chrome = os.environ.get(
+        "WEBARCHIVE_CHROME",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",  # --cask eloston-chromium
+    )
+
 if chrome is None:
     raise SystemExit("couldn't find chrome")
 
-singlefile = "/opt/webarchive/node_modules/single-file-cli/single-file"
-# singlefile = "/Users/josh/webarchive/node_modules/single-file-cli/single-file"
+singlefile = os.environ.get(
+    "WEBARCHIVE_SINGLEFILE", "/opt/webarchive/node_modules/single-file-cli/single-file"
+)
 
-import sys
 import hashlib
 import time
 import functools
@@ -15,7 +26,6 @@ import os
 import json
 import urllib.parse
 import subprocess
-import multiprocessing
 
 chrome_args = json.dumps(
     [
@@ -48,28 +58,13 @@ chrome_args = json.dumps(
     ]
 )
 
-multiprocessing.set_start_method("fork")
-# multiprocessing.set_start_method("spawn")
-# multiprocessing.set_executable(os.path.join(sys.exec_prefix, 'python'))
-
 from flask import Flask, render_template, request, redirect, url_for, send_file
 
 app = Flask(__name__)
 
 BASE_WORKDIR = os.path.expanduser("~/.local/share/webarchive")
 
-
-def run(workdir: str, cmd: tuple[str]):
-    out = open(f"{workdir}/out", "wb")
-    sys.stdout = out
-
-    proc = subprocess.run(
-        cmd,
-        stdout=out,
-        stderr=subprocess.PIPE,
-        cwd=workdir,
-    )
-    return proc.returncode
+WORKERS: dict[str, subprocess.Popen] = {}
 
 
 @functools.cache
@@ -80,19 +75,22 @@ def slug_workdir(slug: str) -> str:
 
 @app.route("/p/<slug>", methods=("GET",))
 def page(slug):
-    # actual page should be stored on disk at slug hash
-    # at some point would probably be nice to have sqlite
-
-    swd = slug_workdir(slug)
-
-    fp = f"{swd}/singlefile.html"
-    if not os.path.exists(fp):
-        # if not on disk yet, ideally we should tail the logfile
-        # but not sure if singlefile really displays progress
-        # so maybe do an animated dotdotdot that polls
+    proc = WORKERS[slug]
+    rc = proc.poll()
+    if rc is None:
         return "pending"
 
-    return send_file(fp, mimetype="text/html")
+    swd = slug_workdir(slug)
+    fp = f"{swd}/singlefile.html"  # TODO: datetime and page with links
+    if os.path.exists(fp):
+        return send_file(fp, mimetype="text/html")
+
+    err = "worker error, singlefile was not written."
+
+    with open(f"{slug_workdir(slug)}/out") as f:
+        err = f"{err}\nout:\n{f.read()}"
+
+    return err
 
 
 # TODO: /archive should just list the workdir
@@ -114,26 +112,30 @@ def home():
     now = time.gmtime()
     slug = f"{now.tm_year}-{now.tm_mon}-{now.tm_hour}-{urllib.parse.quote_plus(url)}"
 
-    workdir = slug_workdir(slug)
-
-    if os.path.isdir(workdir):
+    if WORKERS.get(slug):
         return redirect(url_for("page", slug=slug))
 
-    os.makedirs(workdir)
+    workdir = slug_workdir(slug)
+    os.makedirs(workdir, exist_ok=True)
 
-    p = multiprocessing.Process(
-        target=run,
-        args=(
-            workdir,
-            (
-                singlefile,
-                f"--browser-executable-path={chrome}",
-                f"--browser-args={chrome_args}",
-                url,
-                "singlefile.html",
-            ),
+    out = open(f"{workdir}/out", "ab", buffering=0)
+
+    proc = subprocess.Popen(
+        (
+            singlefile,
+            f"--browser-executable-path={chrome}",
+            f"--browser-args={chrome_args}",
+            "--dump-content",
+            url,
+            # TODO: include datetime
+            "singlefile.html",
         ),
+        stdout=out,
+        stderr=subprocess.PIPE,
+        cwd=workdir,
     )
-    p.start()
 
+    WORKERS[slug] = proc
+
+    # BUG: if there's an error that happens very quickly, /page will just stay on pending and you need to refresh manually
     return redirect(url_for("page", slug=slug))
